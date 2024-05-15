@@ -8,7 +8,7 @@ library(TukeyRegion)
 Lamb <- .4; mu <- .6; nu <- .6
 
 # similuate birth depth processes
-N <- 30; t <- 10
+N <- 10; t <- 10
 X <- list() # initialisation
 X_t0 = sample(6:15, N, replace = TRUE) # start points
 
@@ -29,7 +29,7 @@ for (i in 1:N){
   legend("topleft", legend = c(round(Lambs[i],digits = 3), round(mus[i], digits = 3), round(nus[i], digits = 3)), col = c("blue", "red", "green"), lwd = 2)
 }
 # get discret observations : 9 observation per process
-discret_times <- c(0, .21,.73, 1.5, 1.95, 2.5, 3.56, 4.17, 5)
+discret_times <- c(0, 1, 2, 2.5, 3.4, 4.3, 5.2, 6.1, 7.2, 8, 9)
 X_discret <- lapply(X, function(x) getPartialData(discret_times, x))
 
 sufficient_stats <- function(bd_process){
@@ -76,7 +76,13 @@ Psi <- function(lambda, mu, nu, len) {
   return(c(lambda, mu, nu, rep(1, len*3)))
 }
 
-#history <- matrix(0, nrow = 3, ncol = 200)
+# k_bar
+maximum <- 0
+minimum <- 100
+for (i in 1:N){
+  if (max(X_discret[[i]]@states)>maximum){maximum <- max(X_discret[[i]]@states)}
+  if (min(X_discret[[i]]@states)<minimum){minimum <- min(X_discret[[i]]@states)}
+}
 
 # Stochastic Proximal Gradient Algorithms
 SGD <- function(X_discret, learning_rate = 0.01, epochs = 100, batch_size = 1, N_latent_params = 10, N_latent_x = 2) {
@@ -167,6 +173,6 @@ SGD <- function(X_discret, learning_rate = 0.01, epochs = 100, batch_size = 1, N
   return(list(Lamb, mu, nu))
 }
 
-parameters <- SGD(X_discret, learning_rate = 0.1, epochs = 3, batch_size = 10, N_latent_params = 20, N_latent_x = 1)
+parameters <- SGD(X_discret, learning_rate = 0.1, epochs = 3, batch_size = 10, N_latent_params = 15, N_latent_x = 1)
 
 

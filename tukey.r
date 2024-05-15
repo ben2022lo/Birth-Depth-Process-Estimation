@@ -5,12 +5,12 @@ library(DOBAD)
 library(truncnorm)
 library(TukeyRegion)
 # parameters
-Lamb <- .4; mu <- .6; nu <- .6
+Lamb <- .6; mu <- .55; nu <- .1
 
 # similuate birth depth processes
-N <- 8; t <- 10
+N <- 10; t <- 10
 X <- list() # initialisation
-X_t0 = sample(6:15, N, replace = TRUE) # start points
+X_t0 = sample(15:25, N, replace = TRUE) # start points
 
 Lambs <- rtruncnorm(N, a = 0, b = Lamb*2, mean = Lamb, sd = 0.02)
 mus <- rtruncnorm(N, a = 0, b = mu*2, mean = mu, sd = 0.02)
@@ -28,8 +28,8 @@ for (i in 1:N){
   plot(X[[i]]@times, X[[i]]@states, type = "l", xlab = "Time", ylab = "States", main = "BDMC States over Time")
   legend("topleft", legend = c(round(Lambs[i],digits = 3), round(mus[i], digits = 3), round(nus[i], digits = 3)), col = c("blue", "red", "green"), lwd = 2)
 }
-# get discret observations : 9 observation per process
-discret_times <- c(0, .21,.73, 1.5, 1.95, 2.5, 3.56, 4.17, 5)
+# get discret observations : 11 observation per process
+discret_times <- c(0, .21,.62,.73, 1.44, 1.95, 3.56, 4.17, 5)
 X_discret <- lapply(X, function(x) getPartialData(discret_times, x))
 
 sufficient_stats <- function(bd_process){
@@ -76,20 +76,31 @@ Psi <- function(lambda, mu, nu, len) {
   return(c(lambda, mu, nu, rep(1, len*3)))
 }
 
-#history <- matrix(0, nrow = 3, ncol = 200)
+# critère
+cri <- function(lamb, mu, eta, k_bar){
+  (eta/k_bar + lamb)/mu
+}
+
 
 # Stochastic Proximal Gradient Algorithms
-SGD <- function(X_discret, N, learning_rate = 0.01, epochs = 100, batch_size = 1, N_latent_params = 10, N_latent_x = 2) {
+SGD <- function(X_discret, N, k_bar, learning_rate = 0.01, epochs = 100, batch_size = 1, N_latent_params = 10, N_latent_x = 2) {
   
   
   # initialize parameters
-  Lamb <- 0.392304; mu <- 0.4251838; nu = 0.3363412
+  Lamb <- 0.5; mu <- 0.5; nu = 0.5
   cat("Initialization parameters:", Lamb, mu, nu, "\n")
   
+  # likelihood track
+  history_ll <- numeric(epochs)
   
+  # critere track
+  history_cri <- numeric(epochs)
   
   # Iterate over epochs
   for (epoch in 1:epochs) {
+    # likelihood of epoch
+    ll <- numeric(N)
+    
     # initialize batch_means
     batch_mean_S <- matrix(0,nrow=N/batch_size,3)
     batch_num <- 0
@@ -117,8 +128,8 @@ SGD <- function(X_discret, N, learning_rate = 0.01, epochs = 100, batch_size = 1
       
       for (batch_ind in 1:batch_size){
         # initialize latent variables matrix
-        S_z_mat <- matrix(0, nrow = 3, ncol = N_latent_params * N_latent_x)
-        
+        S_z_mat <- matrix(0, nrow = 4, ncol = N_latent_params * N_latent_x)
+        partial_ll <- c()
         # initialize vector of measures of latent variables
         pi_z <- numeric(N_latent_params * N_latent_x)
         for (j1 in seq(1, N_latent_params)) {
@@ -132,7 +143,7 @@ SGD <- function(X_discret, N, learning_rate = 0.01, epochs = 100, batch_size = 1
             
             S_z <- S(Lamb_i[j1], mu_i[j1], nu_i[j1], latent_variables, len)
             psi <- Psi(Lamb, mu, nu, len)
-            S_z_mat[1:3, (j1-1)*N_latent_x + j2] <- S_z[1:3]
+            S_z_mat[1:4, (j1-1)*N_latent_x + j2] <- S_z[1:4]
             
             # (non normalized) measure of latent variable z
             pi_z[(j1-1)*N_latent_x + j2] <- S_z %*% psi
@@ -145,6 +156,10 @@ SGD <- function(X_discret, N, learning_rate = 0.01, epochs = 100, batch_size = 1
         #S_Z <- S_z_mat %*% pi_z
         
         S_Z <- S_z_mat[,which.max(pi_z)]
+        
+        # liklihood
+        ll[i + batch_ind - 1] <- S_Z[4] + dtruncnorm(S_Z[1], a = 0, b = 1, mean = Lamb, sd = 0.2) * dtruncnorm(S_Z[2],a = 0, b = 1, mean = mu, sd = 0.2) * dtruncnorm(S_Z[3],a = 0, b = 1, mean = nu, sd = 0.2)
+        
         cat("S_Z : ",S_Z[1:3], "\n")
         batch_S_Z[1:3,batch_ind] <- S_Z[1:3]
       }
@@ -163,12 +178,15 @@ SGD <- function(X_discret, N, learning_rate = 0.01, epochs = 100, batch_size = 1
     Lamb <- Lamb + learning_rate * gradient_Lamb
     mu <- mu + learning_rate * gradient_mu
     nu <- nu + learning_rate * gradient_nu
+    critere <- cri(Lamb, mu, nu, k_bar)
+    history_ll[epoch] <- mean(ll)
+    
     # Print the loss for monitoring
-    cat("Epoch:", epoch, " Parameters:", Lamb, mu, nu, "\n")
+    cat("Epoch:", epoch, " Parameters:", Lamb, mu, nu, " vraisemblance:", history_ll[epoch]," critere:", critere,"\n")
   }
   
-  return(list(Lamb, mu, nu))
+  return(list(Lamb, mu, nu, history_ll))
 }
 
-parameters <- SGD(X_discret, N=N, learning_rate = 0.2, epochs = 5, batch_size = 2, N_latent_params = 15, N_latent_x = 1)
+parameters <- SGD(X_discret, N=N, k_bar =33, learning_rate = 0.2, epochs = 6, batch_size = 2, N_latent_params = 10, N_latent_x = 1)
 
